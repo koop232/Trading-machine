@@ -1,0 +1,196 @@
+--// SERVICES
+local player = game.Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+local tpDelay = 0.3
+
+--// HARD CODED POSITIONS (FROM YOUR FILES)
+local leftPos1 = Vector3.new(-475.6027, -7.8952, 96.9342)
+local leftPos2 = Vector3.new(-486.7232, -6.0232, 99.2900)
+
+local rightPos1 = Vector3.new(-475.5191, -7.9880, 27.4495)
+local rightPos2 = Vector3.new(-485.9903, -5.7732, 22.6044)
+
+local activePlayer = "left"
+
+--// AUTO TP SETTINGS
+local autoTpEnabled = true
+local lastAutoTp = 0
+local autoTpCooldown = 1.2 -- prevents spam
+
+--// TELEPORT FUNCTION (USED BY BUTTON + AUTO TP)
+local function doTeleport()
+	if not char or not char.Parent then return end
+	if not humanoid or humanoid.Health <= 0 then return end
+	if not hrp or not hrp.Parent then return end
+
+	if activePlayer == "left" then
+		hrp.CFrame = CFrame.new(leftPos1)
+		task.wait(tpDelay)
+		hrp.CFrame = CFrame.new(leftPos2)
+	else
+		hrp.CFrame = CFrame.new(rightPos1)
+		task.wait(tpDelay)
+		hrp.CFrame = CFrame.new(rightPos2)
+	end
+end
+
+--// AUTO-TP TRIGGER (COOLDOWN + TOGGLE)
+local function tryAutoTeleport()
+	if not autoTpEnabled then return end
+	local now = os.clock()
+	if now - lastAutoTp < autoTpCooldown then return end
+	lastAutoTp = now
+	doTeleport()
+end
+
+--// RAGDOLL DETECTION (Steal a Brainrot style: states + BoolValue flags)
+local ragdollStates = {
+	[Enum.HumanoidStateType.Physics] = true,
+	[Enum.HumanoidStateType.Ragdoll] = true,
+	[Enum.HumanoidStateType.FallingDown] = true,
+	[Enum.HumanoidStateType.PlatformStanding] = true,
+}
+
+humanoid.StateChanged:Connect(function(_, newState)
+	if ragdollStates[newState] then
+		tryAutoTeleport()
+	end
+end)
+
+local function looksLikeRagdollFlag(name)
+	name = (name or ""):lower()
+	return name:find("ragdoll") or name:find("ragdolled") or name:find("knock") or name:find("downed")
+end
+
+local hookedFlags = {}
+
+local function hookFlag(obj)
+	if hookedFlags[obj] then return end
+	if not obj:IsA("BoolValue") then return end
+	if not looksLikeRagdollFlag(obj.Name) then return end
+
+	hookedFlags[obj] = true
+
+	if obj.Value == true then
+		tryAutoTeleport()
+	end
+
+	obj.Changed:Connect(function()
+		if obj.Value == true then
+			tryAutoTeleport()
+		end
+	end)
+end
+
+for _, d in ipairs(char:GetDescendants()) do
+	hookFlag(d)
+end
+
+char.DescendantAdded:Connect(function(d)
+	hookFlag(d)
+end)
+
+--// GUI
+local gui = Instance.new("ScreenGui")
+gui.Parent = gethui() or game.CoreGui
+gui.ResetOnSpawn = false
+
+local function createNeonFrame(parent, size, pos)
+	local f = Instance.new("Frame")
+	f.Size = size
+	f.Position = pos
+	f.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	f.BackgroundTransparency = 0.1
+	f.BorderSizePixel = 0
+	f.Parent = parent
+	f.Active = true
+	f.Draggable = true
+	Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+
+	local s = Instance.new("UIStroke", f)
+	s.Color = Color3.fromRGB(255, 20, 147)
+	s.Thickness = 2
+	return f
+end
+
+local mainFrame = createNeonFrame(gui, UDim2.new(0, 360, 0, 200), UDim2.new(0.5, -180, 0.5, -100))
+
+local title = Instance.new("TextLabel", mainFrame)
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundTransparency = 1
+title.Text = "laced tp"
+title.Font = Enum.Font.GothamBlack
+title.TextColor3 = Color3.fromRGB(255, 20, 147)
+title.TextSize = 24
+
+local function createButton(parent, pos, size, text)
+	local b = Instance.new("TextButton")
+	b.Position = pos
+	b.Size = size
+	b.Text = text
+	b.Font = Enum.Font.GothamBold
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.TextSize = 18
+	b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	b.Parent = parent
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 12)
+
+	local s = Instance.new("UIStroke", b)
+	s.Color = Color3.fromRGB(255, 20, 147)
+	s.Thickness = 2
+	return b
+end
+
+local tpBtn = createButton(mainFrame, UDim2.new(0.1, 0, 0.35, 0), UDim2.new(0.8, 0, 0, 50), "Teleport")
+local leftBtn = createButton(mainFrame, UDim2.new(0.05, 0, 0.65, 0), UDim2.new(0.4, 0, 0, 50), "Left")
+local rightBtn = createButton(mainFrame, UDim2.new(0.55, 0, 0.65, 0), UDim2.new(0.4, 0, 0, 50), "Right")
+
+-- SELECT PLAYER
+leftBtn.MouseButton1Click:Connect(function()
+	activePlayer = "left"
+end)
+
+rightBtn.MouseButton1Click:Connect(function()
+	activePlayer = "right"
+end)
+
+-- TELEPORT (MANUAL)
+tpBtn.MouseButton1Click:Connect(function()
+	doTeleport()
+end)
+
+-- OPTIONAL: press RightShift to toggle auto-TP on/off
+local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		autoTpEnabled = not autoTpEnabled
+		title.Text = autoTpEnabled and "laced tp (auto ON)" or "laced tp (auto OFF)"
+	end
+end)
+
+-- RESPAWN FIX (rebind ragdoll detection + update refs)
+player.CharacterAdded:Connect(function(newChar)
+	char = newChar
+	hrp = char:WaitForChild("HumanoidRootPart")
+	humanoid = char:WaitForChild("Humanoid")
+
+	-- reset flag hooks
+	hookedFlags = {}
+
+	humanoid.StateChanged:Connect(function(_, newState)
+		if ragdollStates[newState] then
+			tryAutoTeleport()
+		end
+	end)
+
+	for _, d in ipairs(char:GetDescendants()) do
+		hookFlag(d)
+	end
+
+	char.DescendantAdded:Connect(function(d)
+		hookFlag(d)
+	end)
+end)
